@@ -1,10 +1,88 @@
+import { useEffect, useState } from "react";
 import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { TrendingDown } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
+import { format } from "date-fns";
+
+type Product = {
+  id: string;
+  title: string;
+  image_url: string | null;
+  price: number;
+  price_history: Array<{
+    old_price: number;
+    new_price: number;
+    changed_at: string;
+  }>;
+};
 
 const PriceTracker = () => {
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
+  const { toast } = useToast();
+
+  useEffect(() => {
+    const fetchTrackedProducts = async () => {
+      try {
+        const { data: productsData, error: productsError } = await supabase
+          .from("products")
+          .select(`
+            id,
+            title,
+            image_url,
+            price
+          `)
+          .limit(5);
+
+        if (productsError) throw productsError;
+
+        if (productsData) {
+          const productsWithHistory = await Promise.all(
+            productsData.map(async (product) => {
+              const { data: historyData } = await supabase
+                .from("price_history")
+                .select("old_price, new_price, changed_at")
+                .eq("product_id", product.id)
+                .order("changed_at", { ascending: false })
+                .limit(10);
+
+              return {
+                ...product,
+                price_history: historyData || [],
+              };
+            })
+          );
+
+          setProducts(productsWithHistory);
+        }
+      } catch (error) {
+        console.error("Error fetching tracked products:", error);
+        toast({
+          title: "Error",
+          description: "Failed to load tracked products",
+          variant: "destructive",
+        });
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchTrackedProducts();
+  }, [toast]);
+
+  const getLowestPrice = (product: Product) => {
+    if (product.price_history.length === 0) return product.price;
+    const allPrices = [
+      product.price,
+      ...product.price_history.map((h) => h.new_price),
+    ];
+    return Math.min(...allPrices);
+  };
+
   return (
     <div className="min-h-screen flex flex-col">
       <Header />
@@ -17,65 +95,71 @@ const PriceTracker = () => {
               Track your products like stock charts – never miss a price drop!
             </p>
             
-            {/* Gamified Badges */}
-            <div className="flex gap-3 mb-8">
-              <Badge variant="secondary" className="text-sm py-2 px-4">
-                🏆 Smart Saver
-              </Badge>
-              <Badge variant="secondary" className="text-sm py-2 px-4">
-                🎯 Deal Hunter
-              </Badge>
-            </div>
-            
-            {/* Sample Product Tracking Card */}
-            <Card className="hover:shadow-hover transition-all duration-300">
-              <CardContent className="p-6">
-                <div className="flex items-start gap-6">
-                  <img
-                    src="https://images.unsplash.com/photo-1556911220-bff31c812dba?w=200&h=200&fit=crop"
-                    alt="Product"
-                    className="w-32 h-32 object-cover rounded-lg"
-                  />
-                  
-                  <div className="flex-1">
-                    <h3 className="font-semibold text-lg mb-2">Elica 60cm Auto Clean Kitchen Chimney</h3>
-                    
-                    <div className="grid grid-cols-2 gap-4 mb-4">
-                      <div>
-                        <div className="text-xs text-muted-foreground mb-1">Current Amazon Price</div>
-                        <div className="text-xl font-bold">₹8,999</div>
-                      </div>
-                      <div>
-                        <div className="text-xs text-muted-foreground mb-1">Current Flipkart Price</div>
-                        <div className="text-xl font-bold">₹9,499</div>
-                      </div>
-                    </div>
-                    
-                    <div className="bg-muted/30 p-3 rounded-lg mb-4">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <div className="text-xs text-muted-foreground mb-1">Lowest Price Ever</div>
-                          <div className="text-lg font-bold text-primary">₹7,999</div>
-                          <div className="text-xs text-muted-foreground">15 Dec 2024</div>
+            {loading ? (
+              <div className="text-center py-12">
+                <p className="text-muted-foreground">Loading tracked products...</p>
+              </div>
+            ) : products.length === 0 ? (
+              <div className="text-center py-12">
+                <p className="text-muted-foreground">No tracked products available</p>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {products.map((product) => {
+                  const lowestPrice = getLowestPrice(product);
+                  const lastChange = product.price_history[0];
+
+                  return (
+                    <Card key={product.id} className="hover:shadow-hover transition-all duration-300">
+                      <CardContent className="p-6">
+                        <div className="flex items-start gap-6">
+                          <img
+                            src={product.image_url || "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=200"}
+                            alt={product.title}
+                            className="w-32 h-32 object-cover rounded-lg"
+                          />
+                          
+                          <div className="flex-1">
+                            <h3 className="font-semibold text-lg mb-2">{product.title}</h3>
+                            
+                            <div className="grid grid-cols-2 gap-4 mb-4">
+                              <div>
+                                <div className="text-xs text-muted-foreground mb-1">Current Price</div>
+                                <div className="text-xl font-bold">₹{product.price.toLocaleString()}</div>
+                              </div>
+                              <div>
+                                <div className="text-xs text-muted-foreground mb-1">Lowest Ever</div>
+                                <div className="text-xl font-bold text-primary">₹{lowestPrice.toLocaleString()}</div>
+                              </div>
+                            </div>
+                            
+                            {lastChange && (
+                              <div className="bg-muted/30 p-3 rounded-lg mb-4">
+                                <div className="flex items-center justify-between">
+                                  <div>
+                                    <div className="text-xs text-muted-foreground mb-1">Last Price Change</div>
+                                    <div className="text-sm">
+                                      ₹{lastChange.old_price.toLocaleString()} → ₹{lastChange.new_price.toLocaleString()}
+                                    </div>
+                                    <div className="text-xs text-muted-foreground">
+                                      {format(new Date(lastChange.changed_at), "dd MMM yyyy")}
+                                    </div>
+                                  </div>
+                                  <Badge variant="secondary">
+                                    <TrendingDown className="w-3 h-3 mr-1" />
+                                    Tracking
+                                  </Badge>
+                                </div>
+                              </div>
+                            )}
+                          </div>
                         </div>
-                        <Badge variant="secondary">
-                          <TrendingDown className="w-3 h-3 mr-1" />
-                          Tracking Daily
-                        </Badge>
-                      </div>
-                    </div>
-                    
-                    {/* Price History Chart Placeholder */}
-                    <div className="bg-gradient-to-br from-primary/5 to-accent/5 rounded-lg p-4 h-48 flex items-center justify-center border border-border">
-                      <div className="text-center text-muted-foreground">
-                        <TrendingDown className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                        <p className="text-sm">Price history chart coming soon</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
       </main>
