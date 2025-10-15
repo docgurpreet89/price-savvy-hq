@@ -1,212 +1,198 @@
-import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
-import Header from "@/components/layout/Header";
+// src/pages/Articles.tsx
+"use client";
+
+import React, { useEffect, useState } from "react";
+import Header from "@/components/Header";
 import Footer from "@/components/layout/Footer";
-import { Input } from "@/components/ui/input";
+import { useArticles } from "@/hooks/useArticles";
+import ArticleCard from "@/components/ArticleCard";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { Search } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 
-type Category = {
-  id: string;
-  name: string;
-  slug: string;
-  icon: string | null;
-};
-
-type Article = {
-  id: string;
-  title: string;
-  slug: string;
-  excerpt: string;
-  featured_image: string | null;
-  categories: {
-    name: string;
-  } | null;
-};
-
-const Articles = () => {
+const ArticlesPage: React.FC = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { categories, articles: initialArticles, loading } = useArticles();
   const [searchQuery, setSearchQuery] = useState("");
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [articles, setArticles] = useState<Article[]>([]);
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [wishlist, setWishlist] = useState<string[]>([]);
+  const [displayArticles, setDisplayArticles] = useState(initialArticles);
+
+  useEffect(() => setDisplayArticles(initialArticles), [initialArticles]);
 
   useEffect(() => {
-    const fetchData = async () => {
+    // load wishlist from localStorage (or you may load from DB per user)
+    const saved = typeof window !== "undefined" ? localStorage.getItem("apni_wishlist") : null;
+    if (saved) {
       try {
-        // Fetch categories
-        const { data: categoriesData, error: categoriesError } = await supabase
-          .from("categories")
-          .select("id, name, slug, icon")
-          .order("name");
-
-        if (categoriesError) throw categoriesError;
-        setCategories(categoriesData || []);
-
-        // Fetch latest articles
-        const { data: articlesData, error: articlesError } = await supabase
-          .from("articles")
-          .select(`
-            id,
-            title,
-            slug,
-            excerpt,
-            featured_image,
-            categories (
-              name
-            )
-          `)
-          .eq("status", "published")
-          .order("created_at", { ascending: false })
-          .limit(6);
-
-        if (articlesError) throw articlesError;
-        setArticles(articlesData || []);
-      } catch (error) {
-        console.error("Error fetching data:", error);
-        toast({
-          title: "Error",
-          description: "Failed to load data",
-          variant: "destructive",
-        });
+        setWishlist(JSON.parse(saved));
+      } catch {
+        setWishlist([]);
       }
-    };
+    }
+  }, []);
 
-    fetchData();
-  }, [toast]);
+  const persistWishlist = (items: string[]) => {
+    setWishlist(items);
+    localStorage.setItem("apni_wishlist", JSON.stringify(items));
+  };
 
-  const handleSearchChange = (value: string) => {
-    setSearchQuery(value);
-    if (value.trim().length > 1) {
+  const handleWishlistToggle = (id: string) => {
+    const exists = wishlist.includes(id);
+    const updated = exists ? wishlist.filter((x) => x !== id) : [id, ...wishlist];
+    persistWishlist(updated);
+    toast({ title: exists ? "Removed" : "Added", description: exists ? "Removed from wishlist" : "Added to wishlist" });
+  };
+
+  const handleSearchChange = (val: string) => {
+    setSearchQuery(val);
+    if (val.trim().length > 1) {
       const filtered = categories
-        .filter((cat) => cat.name.toLowerCase().includes(value.toLowerCase()))
-        .map((cat) => cat.name)
-        .slice(0, 5);
+        .filter((c) => c.name.toLowerCase().includes(val.toLowerCase()))
+        .map((c) => c.name)
+        .slice(0, 6);
       setSuggestions(filtered);
       setShowSuggestions(true);
     } else {
-      setSuggestions([]);
       setShowSuggestions(false);
     }
   };
 
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (searchQuery.trim()) {
-      navigate(`/search?q=${encodeURIComponent(searchQuery.trim())}`);
-      setShowSuggestions(false);
-    }
-  };
-
-  const handleCategoryClick = (slug: string) => {
-    navigate(`/search?category=${slug}`);
-  };
-
-  const handleSuggestionClick = (suggestion: string) => {
-    const category = categories.find((cat) => cat.name === suggestion);
-    if (category) {
-      navigate(`/search?category=${category.slug}`);
-    }
-    setShowSuggestions(false);
+  const handleSuggestionClick = (s: string) => {
+    const cat = categories.find((c) => c.name === s);
+    if (cat) navigate(`/search?category=${cat.slug}`);
     setSearchQuery("");
+    setShowSuggestions(false);
   };
+
+  const openCategory = (slug: string) => navigate(`/search?category=${slug}`);
+
+  const openArticle = (slug: string) => navigate(`/articles/${slug}`);
+
+  // wishlist articles (4 columns x 5 rows = 20 items per page)
+  const wishlistItems = (initialArticles || []).filter((a: any) => wishlist.includes(a.id));
+  const wishlistPaged = wishlistItems.slice(0, 20);
 
   return (
     <div className="min-h-screen flex flex-col">
       <Header />
-      
       <main className="flex-1">
-        {/* Search Section */}
-        <section className="bg-muted/20 py-12">
-          <div className="container mx-auto px-4">
-            <h1 className="text-4xl font-bold text-center mb-8">Expert Product Reviews</h1>
-            
-            <div className="max-w-2xl mx-auto">
-              <form onSubmit={handleSearch} className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-5 w-5" />
-                <Input
-                  type="text"
-                  placeholder="Search articles or try 'chimney', 'tv', 'refrigerator'..."
-                  value={searchQuery}
-                  onChange={(e) => handleSearchChange(e.target.value)}
-                  onFocus={() => searchQuery.length > 1 && setShowSuggestions(true)}
-                  onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
-                  className="pl-10 pr-4 py-6 text-lg"
-                />
-                {showSuggestions && suggestions.length > 0 && (
-                  <div className="absolute top-full left-0 right-0 mt-2 bg-card border rounded-lg shadow-lg z-10">
-                    {suggestions.map((suggestion, index) => (
-                      <button
-                        key={index}
-                        type="button"
-                        onClick={() => handleSuggestionClick(suggestion)}
-                        className="w-full text-left px-4 py-3 hover:bg-muted transition-colors"
-                      >
-                        {suggestion}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </form>
+        <section className="bg-muted/10 py-12">
+          <div className="container mx-auto px-4 text-center">
+            <h1 className="text-4xl font-bold mb-3">Expert Product Reviews</h1>
+            <p className="text-muted-foreground mb-8">In-depth reviews, price tracking & best deals curated for you.</p>
+
+            <div className="max-w-2xl mx-auto relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+              <Input
+                value={searchQuery}
+                onChange={(e) => handleSearchChange(e.target.value)}
+                onFocus={() => setShowSuggestions(searchQuery.length > 1)}
+                placeholder="Search articles or categories (try 'chimney', 'tv')..."
+                className="pl-10 pr-4 py-4 rounded-xl"
+                onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+              />
+              {showSuggestions && suggestions.length > 0 && (
+                <div className="absolute left-0 right-0 mt-2 bg-card border rounded-lg shadow z-20">
+                  {suggestions.map((s, i) => (
+                    <button key={i} onClick={() => handleSuggestionClick(s)} className="w-full text-left px-4 py-3 hover:bg-muted transition-colors">
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </section>
 
-        {/* Categories Grid */}
-        <section className="py-12">
-          <div className="container mx-auto px-4">
-            <h2 className="text-2xl font-bold mb-8">Browse by Category</h2>
-            
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-              {categories.map((category) => (
-                <Card 
-                  key={category.id} 
-                  className="group hover:shadow-hover transition-all duration-300 cursor-pointer"
-                  onClick={() => handleCategoryClick(category.slug)}
-                >
-                  <CardContent className="p-6 text-center">
-                    <div className="text-4xl mb-3">{category.icon || "📦"}</div>
-                    <h3 className="font-semibold text-base">{category.name}</h3>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
+        {/* Categories */}
+        <section className="py-10 container mx-auto px-4">
+          <h2 className="text-2xl font-semibold mb-6">Browse by Category</h2>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+            {categories.map((c) => (
+              <Card key={c.id} className="cursor-pointer hover:shadow-md" onClick={() => openCategory(c.slug)}>
+                <CardContent className="text-center p-4">
+                  <div className="text-3xl mb-2">{c.icon || "📦"}</div>
+                  <div className="font-medium">{c.name}</div>
+                </CardContent>
+              </Card>
+            ))}
           </div>
         </section>
 
-        {/* Latest Articles */}
-        <section className="py-12 bg-muted/20">
+        {/* Latest / Featured */}
+        <section className="py-12 bg-muted/10">
           <div className="container mx-auto px-4">
-            <h2 className="text-2xl font-bold mb-8">Latest Reviews</h2>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {articles.map((article) => (
-                <Card key={article.id} className="overflow-hidden hover:shadow-hover transition-all duration-300 cursor-pointer" onClick={() => navigate(`/articles/${article.slug}`)}>
-                  <img
-                    src={article.featured_image || "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=400"}
-                    alt={article.title}
-                    className="w-full h-48 object-cover"
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-2xl font-bold">Top Reviewed Products</h2>
+              <div className="text-sm text-muted-foreground">Showing top picks</div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+              {loading ? (
+                Array.from({ length: 8 }).map((_, i) => (
+                  <div key={i} className="h-64 bg-muted/30 animate-pulse rounded-lg" />
+                ))
+              ) : (initialArticles || []).length === 0 ? (
+                <div className="col-span-full text-center py-12 text-muted-foreground">No articles yet — admin can create new articles from /admin/articles/new</div>
+              ) : (
+                (initialArticles || []).slice(0, 8).map((a: any) => (
+                  <ArticleCard
+                    key={a.id}
+                    id={a.id}
+                    title={a.title}
+                    slug={a.slug}
+                    excerpt={a.excerpt}
+                    featured_image={a.featured_image}
+                    price={a.price}
+                    discount_percent={a.discount_percent}
+                    categoryName={a.category?.name}
+                    amazon_link={a.amazon_link}
+                    flipkart_link={a.flipkart_link}
+                    onWishlistToggle={handleWishlistToggle}
+                    isWishlisted={wishlist.includes(a.id)}
                   />
-                  <CardContent className="p-6">
-                    {article.categories && (
-                      <Badge variant="secondary" className="mb-2">
-                        {article.categories.name}
-                      </Badge>
-                    )}
-                    <h3 className="text-lg font-bold mb-2">{article.title}</h3>
-                    <p className="text-sm text-muted-foreground mb-4 line-clamp-2">
-                      {article.excerpt}
-                    </p>
-                  </CardContent>
-                </Card>
-              ))}
+                ))
+              )}
             </div>
           </div>
+        </section>
+
+        {/* Wishlist grid 4x5 (20 items) */}
+        <section className="py-12 container mx-auto px-4">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-2xl font-bold">Your Wishlist</h2>
+            <div className="text-sm text-muted-foreground">4 cards per row · max 20 items shown</div>
+          </div>
+
+          {wishlistPaged.length === 0 ? (
+            <div className="text-center text-muted-foreground py-10">Your wishlist is empty. Click ♥ on a product to add it to your wishlist.</div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+              {wishlistPaged.map((a: any) => (
+                <ArticleCard
+                  key={a.id}
+                  id={a.id}
+                  title={a.title}
+                  slug={a.slug}
+                  excerpt={a.excerpt}
+                  featured_image={a.featured_image}
+                  price={a.price}
+                  discount_percent={a.discount_percent}
+                  categoryName={a.category?.name}
+                  amazon_link={a.amazon_link}
+                  flipkart_link={a.flipkart_link}
+                  onWishlistToggle={handleWishlistToggle}
+                  isWishlisted={wishlist.includes(a.id)}
+                />
+              ))}
+            </div>
+          )}
         </section>
       </main>
 
@@ -215,4 +201,4 @@ const Articles = () => {
   );
 };
 
-export default Articles;
+export default ArticlesPage;
