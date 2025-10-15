@@ -118,53 +118,69 @@ const Wishlist = () => {
               </Button>
             </div>
           ) : (
-            <div className="space-y-6 max-w-4xl mx-auto">
-              {wishlistItems.map((item) => (
-                <Card key={item.id} className="hover:shadow-hover transition-all duration-300">
-                  <CardContent className="p-6">
-                    <div className="flex flex-col md:flex-row gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              {wishlistItems.map((item) => {
+                const discount = item.products.price && (item.products as any).mrp 
+                  ? Math.round((((item.products as any).mrp - item.products.price) / (item.products as any).mrp) * 100)
+                  : 0;
+                
+                return (
+                  <Card key={item.id} className="overflow-hidden hover:shadow-hover transition-all duration-300 group">
+                    <div className="relative">
                       <img
-                        src={item.products.image_url || "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=500"}
+                        src={item.products.image_url || "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=400"}
                         alt={item.products.title}
-                        className="w-full md:w-48 h-48 object-cover rounded-lg"
+                        className="w-full h-56 object-cover"
                       />
-                      
-                      <div className="flex-1 space-y-4">
-                        <div>
-                          <h3 className="font-semibold text-lg mb-2">{item.products.title}</h3>
-                          
-                          <div className="mb-4">
-                            <div className="text-xs text-muted-foreground mb-1">Current Price</div>
-                            <div className="text-2xl font-bold">₹{item.products.price.toLocaleString()}</div>
-                          </div>
-                          
-                          <Badge variant="secondary">
-                            <TrendingDown className="w-3 h-3 mr-1" />
-                            Price tracking active
-                          </Badge>
-                        </div>
-                        
-                        <div className="flex gap-2">
-                          <Button
-                            className="flex-1"
-                            onClick={() => window.open(item.products.affiliate_url, "_blank")}
-                          >
-                            Buy Now
-                            <ExternalLink className="ml-2 h-4 w-4" />
-                          </Button>
-                          <Button 
-                            variant="ghost" 
-                            size="icon"
-                            onClick={() => removeFromWishlist(item.id)}
-                          >
-                            <Heart className="h-5 w-5 fill-current" />
-                          </Button>
-                        </div>
-                      </div>
+                      {discount > 0 && (
+                        <Badge className="absolute top-2 left-2 bg-primary text-primary-foreground">
+                          {discount}% OFF
+                        </Badge>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="absolute top-2 right-2 bg-background/80 hover:bg-background"
+                        onClick={() => removeFromWishlist(item.id)}
+                      >
+                        <Heart className="h-5 w-5 fill-current text-primary" />
+                      </Button>
                     </div>
-                  </CardContent>
-                </Card>
-              ))}
+                    
+                    <CardContent className="p-4">
+                      <h3 className="font-semibold text-sm mb-2 line-clamp-2 min-h-[2.5rem]">
+                        {item.products.title}
+                      </h3>
+                      
+                      <div className="space-y-2 mb-3">
+                        <div className="flex items-baseline gap-2">
+                          <span className="text-xl font-bold">₹{item.products.price.toLocaleString()}</span>
+                          {(item.products as any).mrp && (item.products as any).mrp > item.products.price && (
+                            <span className="text-sm text-muted-foreground line-through">
+                              ₹{(item.products as any).mrp.toLocaleString()}
+                            </span>
+                          )}
+                        </div>
+                        <Badge variant="secondary" className="text-xs">
+                          <TrendingDown className="w-3 h-3 mr-1" />
+                          Tracking active
+                        </Badge>
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <Button
+                          size="sm"
+                          className="w-full"
+                          onClick={() => window.open(item.products.affiliate_url, "_blank")}
+                        >
+                          Buy Now
+                          <ExternalLink className="ml-2 h-3 w-3" />
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
             </div>
           )}
         </div>
